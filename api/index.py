@@ -1,6 +1,7 @@
 import os
 import re
 import requests
+from bs4 import BeautifulSoup
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
@@ -28,46 +29,68 @@ def send_photo(chat_id, photo_url, caption, reply_markup=None):
     return res.json().get("ok", False)
 
 def fetch_instagram_profile(username):
-    # Using a fast and reliable public JSON api gateway for Instagram profiles
-    api_url = f"https://www.instagram.com/{username}/channel/"
     headers = {
-        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.5"
     }
-    
-    try:
-        # Let's try an alternative stable public API provider proxy for instant data
-        proxy_url = f"https://www.picuki.com/profile/{username}"
-        response = requests.get(proxy_url, headers=headers, timeout=10)
-        
-        if response.status_code == 200:
-            from bs4 import BeautifulSoup
+
+    # List of alternative viewer sites to try sequentially (Fallback mechanism)
+    urls = [
+        f"https://greatfon.io/c/{username}",
+        f"https://www.picuki.com/profile/{username}",
+        f"https://imginn.com/{username}/"
+    ]
+
+    for target_url in urls:
+        try:
+            response = requests.get(target_url, headers=headers, timeout=8)
+            if response.status_code != 200:
+                continue
+                
             soup = BeautifulSoup(response.text, 'html.parser')
             
-            # Picuki specific reliable selectors
-            name_div = soup.find('div', class_='profile-name')
-            full_name = name_div.find('h1').text.strip() if name_div and name_div.find('h1') else username
+            og_title = soup.find('meta', property='og:title')
+            og_desc = soup.find('meta', property='og:description')
+            og_image = soup.find('meta', property='og:image')
             
+            if not og_desc and not og_title:
+                continue
+
+            full_name = username
+            if og_title and og_title.get('content'):
+                title_content = og_title['content']
+                if '(' in title_content and ')' in title_content:
+                    full_name = title_content.split('(')[0].strip()
+                elif '-' in title_content:
+                    full_name = title_content.split('-')[0].strip()
+
+            avatar_url = ""
+            if og_image and og_image.get('content'):
+                avatar_url = og_image['content']
+
             posts, followers, following = "0", "0", "0"
-            counters = soup.find('ul', class_='profile-counters')
-            if counters:
-                items = counters.find_all('li')
-                for item in items:
-                    txt = item.get_text().lower()
-                    val_elem = item.find('strong')
-                    val = val_elem.text.strip() if val_elem else "0"
-                    if 'post' in txt: posts = val
-                    elif 'follower' in txt: followers = val
-                    elif 'following' in txt: following = val
-            
-            bio_div = soup.find('div', class_='profile-description')
-            bio = bio_div.text.strip().replace('\n', ' ') if bio_div else ""
-            
-            img_tag = soup.find('img', class_='profile-avatar')
-            avatar_url = img_tag['src'] if img_tag and 'src' in img_tag.attrs else ""
-            
-            if followers != "0" or posts != "0":
+            bio = ""
+
+            if og_desc and og_desc.get('content'):
+                desc = og_desc['content']
+                
+                # Extract metrics using regex from description meta tag
+                fol_match = re.search(r'([\d,\.KMBkmb]+)\s*Followers', desc, re.I)
+                if fol_match: followers = fol_match.group(1)
+                
+                fing_match = re.search(r'([\d,\.KMBkmb]+)\s*Following', desc, re.I)
+                if fing_match: following = fing_match.group(1)
+                
+                post_match = re.search(r'([\d,\.KMBkmb]+)\s*Posts', desc, re.I)
+                if post_match: posts = post_match.group(1)
+                
+                parts = re.split(r'[-–—]\s*', desc, 1)
+                if len(parts) > 1:
+                    bio = parts[1].strip()
+
+            # If we successfully extracted followers or posts, return the data
+            if followers != "0" or posts != "0" or bio != "":
                 return {
                     "username": username,
                     "fullName": full_name,
@@ -77,12 +100,10 @@ def fetch_instagram_profile(username):
                     "bio": bio,
                     "avatarUrl": avatar_url
                 }
-        
-        # Fallback to another public endpoint if picuki fails
-        return {"error": "Could not parse accurate data from viewer nodes."}
-        
-    except Exception as e:
-        return {"error": str(e)}
+        except Exception:
+            continue
+
+    return {"error": "All viewer nodes blocked or unavailable."}
 
 @app.route('/', methods=['POST'])
 def webhook():
@@ -141,7 +162,7 @@ def webhook():
 
 @app.route('/', methods=['GET'])
 def home():
-    return "Bot is running!"
+    return "Multi-Node Fallback Bot is running!"
 
 if __name__ == '__main__':
     app.run(debug=True)
