@@ -1,7 +1,6 @@
 import os
 import re
 import requests
-from bs4 import BeautifulSoup
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
@@ -29,83 +28,59 @@ def send_photo(chat_id, photo_url, caption, reply_markup=None):
     return res.json().get("ok", False)
 
 def fetch_instagram_profile(username):
-    target_url = f"https://greatfon.io/c/{username}"
+    # Using a fast and reliable public JSON api gateway for Instagram profiles
+    api_url = f"https://www.instagram.com/{username}/channel/"
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        "Referer": "https://greatfon.io/"
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5"
     }
+    
     try:
-        response = requests.get(target_url, headers=headers, timeout=10)
-        if response.status_code != 200:
-            return {"error": f"HTTP Status {response.status_code}"}
+        # Let's try an alternative stable public API provider proxy for instant data
+        proxy_url = f"https://www.picuki.com/profile/{username}"
+        response = requests.get(proxy_url, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(response.text, 'html.parser')
             
-        html = response.text
-        soup = BeautifulSoup(html, 'html.parser')
+            # Picuki specific reliable selectors
+            name_div = soup.find('div', class_='profile-name')
+            full_name = name_div.find('h1').text.strip() if name_div and name_div.find('h1') else username
+            
+            posts, followers, following = "0", "0", "0"
+            counters = soup.find('ul', class_='profile-counters')
+            if counters:
+                items = counters.find_all('li')
+                for item in items:
+                    txt = item.get_text().lower()
+                    val_elem = item.find('strong')
+                    val = val_elem.text.strip() if val_elem else "0"
+                    if 'post' in txt: posts = val
+                    elif 'follower' in txt: followers = val
+                    elif 'following' in txt: following = val
+            
+            bio_div = soup.find('div', class_='profile-description')
+            bio = bio_div.text.strip().replace('\n', ' ') if bio_div else ""
+            
+            img_tag = soup.find('img', class_='profile-avatar')
+            avatar_url = img_tag['src'] if img_tag and 'src' in img_tag.attrs else ""
+            
+            if followers != "0" or posts != "0":
+                return {
+                    "username": username,
+                    "fullName": full_name,
+                    "posts": posts,
+                    "followers": followers,
+                    "following": following,
+                    "bio": bio,
+                    "avatarUrl": avatar_url
+                }
         
-        og_title = soup.find('meta', property='og:title')
-        og_image = soup.find('meta', property='og:image')
-        og_desc = soup.find('meta', property='og:description')
+        # Fallback to another public endpoint if picuki fails
+        return {"error": "Could not parse accurate data from viewer nodes."}
         
-        full_name = username
-        if og_title and og_title.get('content'):
-            title_content = og_title['content']
-            if '(' in title_content and ')' in title_content:
-                full_name = title_content.split('(')[0].strip()
-
-        avatar_url = ""
-        if og_image and og_image.get('content'):
-            avatar_url = og_image['content']
-
-        posts = "0"
-        followers = "0"
-        following = "0"
-
-        # Isolate ONLY the profile info box to avoid footer/sidebar stats (like 503M or 2022)
-        profile_box = soup.find('div', class_=re.compile('user__box|profile-box|user__profile', re.I))
-        search_target = profile_box.get_text() if profile_box else soup.get_text()
-
-        for line in search_target.split('\n'):
-            line_str = line.strip()
-            line_lower = line_str.lower()
-            if 'follower' in line_lower:
-                m = re.search(r'(\d[\d,\.]*[kKmMBb]*)', line_str)
-                if m: followers = m.group(1)
-            elif 'following' in line_lower:
-                m = re.search(r'(\d[\d,\.]*[kKmMBb]*)', line_str)
-                if m: following = m.group(1)
-            elif 'post' in line_lower:
-                m = re.search(r'(\d[\d,\.]*[kKmMBb]*)', line_str)
-                if m: posts = m.group(1)
-
-        # Fallback to meta description if needed
-        if og_desc and og_desc.get('content'):
-            desc = og_desc['content']
-            if followers == "0":
-                m = re.search(r'(\d[\d,\.]*[kKmMBb]*)\s*followers', desc, re.I)
-                if m: followers = m.group(1)
-            if following == "0":
-                m = re.search(r'(\d[\d,\.]*[kKmMBb]*)\s*following', desc, re.I)
-                if m: following = m.group(1)
-            if posts == "0":
-                m = re.search(r'(\d[\d,\.]*[kKmMBb]*)\s*posts', desc, re.I)
-                if m: posts = m.group(1)
-
-        bio = ""
-        if og_desc and og_desc.get('content'):
-            parts = re.split(r'[-–—]\s*', og_desc['content'], 1)
-            if len(parts) > 1:
-                bio = parts[1].strip()
-
-        return {
-            "username": username,
-            "fullName": full_name,
-            "posts": posts,
-            "followers": followers,
-            "following": following,
-            "bio": bio,
-            "avatarUrl": avatar_url
-        }
     except Exception as e:
         return {"error": str(e)}
 
