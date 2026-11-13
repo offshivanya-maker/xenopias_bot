@@ -6,7 +6,7 @@ from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-TG_TOKEN = "8800384691:AAGu4Ipu_NjV0ZLwE2sLBkSXdL8pDAzWi38"
+TG_TOKEN = "8800384691:AAGtFJQLAlfL3smnat8rSWLuh-5NALMDSPI"
 
 def send_text(chat_id, text, reply_markup=None):
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
