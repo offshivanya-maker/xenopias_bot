@@ -61,9 +61,11 @@ def fetch_instagram_profile(username):
         followers = "0"
         following = "0"
 
-        # Strictly require numbers starting with a digit (\d)
-        text_content = soup.get_text()
-        for line in text_content.split('\n'):
+        # Isolate ONLY the profile info box to avoid footer/sidebar stats (like 503M or 2022)
+        profile_box = soup.find('div', class_=re.compile('user__box|profile-box|user__profile', re.I))
+        search_target = profile_box.get_text() if profile_box else soup.get_text()
+
+        for line in search_target.split('\n'):
             line_str = line.strip()
             line_lower = line_str.lower()
             if 'follower' in line_lower:
@@ -76,7 +78,7 @@ def fetch_instagram_profile(username):
                 m = re.search(r'(\d[\d,\.]*[kKmMBb]*)', line_str)
                 if m: posts = m.group(1)
 
-        # Fallback to meta description
+        # Fallback to meta description if needed
         if og_desc and og_desc.get('content'):
             desc = og_desc['content']
             if followers == "0":
