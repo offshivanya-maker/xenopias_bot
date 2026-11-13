@@ -43,9 +43,9 @@ def fetch_instagram_profile(username):
         html = response.text
         soup = BeautifulSoup(html, 'html.parser')
         
-        # 1. Open Graph Meta Tags for Fallback
         og_title = soup.find('meta', property='og:title')
         og_image = soup.find('meta', property='og:image')
+        og_desc = soup.find('meta', property='og:description')
         
         full_name = username
         if og_title and og_title.get('content'):
@@ -57,24 +57,34 @@ def fetch_instagram_profile(username):
         if og_image and og_image.get('content'):
             avatar_url = og_image['content']
 
-        # 2. Bulletproof Full-Text Regex Parsing (Independent of HTML classes)
-        text_content = soup.get_text()
-
         posts = "0"
         followers = "0"
         following = "0"
 
-        # Search patterns for numbers next to labels
-        fol_match = re.search(r'([\d,\.KMB]+)\s*Followers', text_content, re.I)
-        if fol_match: followers = fol_match[1]
+        # Check meta description first as it's cleaner
+        if og_desc and og_desc.get('content'):
+            desc = og_desc['content']
+            fol_match = re.search(r'([\d,\.KMBkmb]+)\s*Followers', desc, re.I)
+            if fol_match: followers = fol_match.group(1)
+            
+            fing_match = re.search(r'([\d,\.KMBkmb]+)\s*Following', desc, re.I)
+            if fing_match: following = fing_match.group(1)
+            
+            post_match = re.search(r'([\d,\.KMBkmb]+)\s*Posts', desc, re.I)
+            if post_match: posts = post_match.group(1)
 
-        fing_match = re.search(r'([\d,\.KMB]+)\s*Following', text_content, re.I)
-        if fing_match: following = fing_match[1]
+        # Fallback to full text scanning if meta didn't catch them
+        text_content = soup.get_text()
+        if followers == "0":
+            m = re.search(r'([\d,\.KMBkmb]+)\s*Followers', text_content, re.I)
+            if m: followers = m.group(1)
+        if following == "0":
+            m = re.search(r'([\d,\.KMBkmb]+)\s*Following', text_content, re.I)
+            if m: following = m.group(1)
+        if posts == "0":
+            m = re.search(r'([\d,\.KMBkmb]+)\s*Posts', text_content, re.I)
+            if m: posts = m.group(1)
 
-        post_match = re.search(r'([\d,\.KMB]+)\s*Posts', text_content, re.I)
-        if post_match: posts = post_match[1]
-
-        # Bio extraction
         bio = ""
         bio_match = soup.find('div', class_=re.compile('bio|description', re.I))
         if bio_match:
