@@ -61,32 +61,32 @@ def fetch_instagram_profile(username):
         followers = "0"
         following = "0"
 
-        # Scan text line by line to extract correct metrics safely
+        # Strictly require numbers starting with a digit (\d)
         text_content = soup.get_text()
         for line in text_content.split('\n'):
             line_str = line.strip()
             line_lower = line_str.lower()
             if 'follower' in line_lower:
-                m = re.search(r'([\d,\.KMBkmb]+)', line_str)
+                m = re.search(r'(\d[\d,\.]*[kKmMBb]*)', line_str)
                 if m: followers = m.group(1)
             elif 'following' in line_lower:
-                m = re.search(r'([\d,\.KMBkmb]+)', line_str)
+                m = re.search(r'(\d[\d,\.]*[kKmMBb]*)', line_str)
                 if m: following = m.group(1)
             elif 'post' in line_lower:
-                m = re.search(r'([\d,\.KMBkmb]+)', line_str)
+                m = re.search(r'(\d[\d,\.]*[kKmMBb]*)', line_str)
                 if m: posts = m.group(1)
 
-        # Fallback to meta description if any metric is missing
+        # Fallback to meta description
         if og_desc and og_desc.get('content'):
             desc = og_desc['content']
             if followers == "0":
-                m = re.search(r'([\d,\.KMBkmb]+)\s*followers', desc, re.I)
+                m = re.search(r'(\d[\d,\.]*[kKmMBb]*)\s*followers', desc, re.I)
                 if m: followers = m.group(1)
             if following == "0":
-                m = re.search(r'([\d,\.KMBkmb]+)\s*following', desc, re.I)
+                m = re.search(r'(\d[\d,\.]*[kKmMBb]*)\s*following', desc, re.I)
                 if m: following = m.group(1)
             if posts == "0":
-                m = re.search(r'([\d,\.KMBkmb]+)\s*posts', desc, re.I)
+                m = re.search(r'(\d[\d,\.]*[kKmMBb]*)\s*posts', desc, re.I)
                 if m: posts = m.group(1)
 
         bio = ""
