@@ -1,4 +1,5 @@
 import os
+import re
 import requests
 from bs4 import BeautifulSoup
 from flask import Flask, request, jsonify
@@ -28,13 +29,11 @@ def send_photo(chat_id, photo_url, caption, reply_markup=None):
     return res.json().get("ok", False)
 
 def fetch_instagram_profile(username):
-    # Alternative viewer site: GreatFon
-    target_url = f"https://greatfon.io/c/{username}"
+    target_url = f"https://inflact.com/instagram-profile-viewer/?profile={username}"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
-        "Referer": "https://greatfon.io/"
+        "Referer": "https://inflact.com/"
     }
     try:
         response = requests.get(target_url, headers=headers, timeout=10)
@@ -43,24 +42,37 @@ def fetch_instagram_profile(username):
             
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Parsing GreatFon structure
-        name_tag = soup.find('div', class_='user__title')
-        full_name = name_tag.h1.text.strip() if name_tag and name_tag.h1 else username
+        og_title = soup.find('meta', property='og:title')
+        og_desc = soup.find('meta', property='og:description')
+        og_image = soup.find('meta', property='og:image')
         
+        full_name = username
         posts, followers, following = "0", "0", "0"
-        stats = soup.find_all('div', class_='user__number')
-        if len(stats) >= 3:
-            posts = stats[0].text.strip()
-            followers = stats[1].text.strip()
-            following = stats[2].text.strip()
-
-        bio_tag = soup.find('div', class_='user__bio')
-        bio = bio_tag.text.strip().replace('\n', ' ') if bio_tag else ""
-
-        avatar_tag = soup.find('div', class_='user__img')
+        bio = ""
         avatar_url = ""
-        if avatar_tag and avatar_tag.find('img'):
-            avatar_url = avatar_tag.find('img')['src']
+        
+        if og_title and og_title.get('content'):
+            title_content = og_title['content']
+            if '(' in title_content and ')' in title_content:
+                full_name = title_content.split('(')[0].strip()
+        
+        if og_desc and og_desc.get('content'):
+            desc = og_desc['content']
+            fol_match = re.search(r'([\d,\.KMB]+)\s*Followers', desc, re.I)
+            if fol_match: followers = fol_match[1]
+            
+            fing_match = re.search(r'([\d,\.KMB]+)\s*Following', desc, re.I)
+            if fing_match: following = fing_match[1]
+            
+            post_match = re.search(r'([\d,\.KMB]+)\s*Posts', desc, re.I)
+            if post_match: posts = post_match[1]
+            
+            parts = re.split(r'[-–—]\s*', desc, 1)
+            if len(parts) > 1:
+                bio = parts[1].strip()
+
+        if og_image and og_image.get('content'):
+            avatar_url = og_image['content']
 
         return {
             "username": username,
