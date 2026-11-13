@@ -28,37 +28,39 @@ def send_photo(chat_id, photo_url, caption, reply_markup=None):
     return res.json().get("ok", False)
 
 def fetch_instagram_profile(username):
-    target_url = f"https://www.picuki.com/profile/{username}"
+    # Alternative viewer site: GreatFon
+    target_url = f"https://greatfon.io/c/{username}"
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Referer": "https://greatfon.io/"
     }
     try:
         response = requests.get(target_url, headers=headers, timeout=10)
         if response.status_code != 200:
-            return None
+            return {"error": f"HTTP Status {response.status_code}"}
             
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        name_tag = soup.find('div', class_='profile-name')
-        full_name = name_tag.find('h1').text.strip() if name_tag and name_tag.find('h1') else username
+        # Parsing GreatFon structure
+        name_tag = soup.find('div', class_='user__title')
+        full_name = name_tag.h1.text.strip() if name_tag and name_tag.h1 else username
         
         posts, followers, following = "0", "0", "0"
-        counters = soup.find('ul', class_='profile-counters')
-        if counters:
-            items = counters.find_all('li')
-            for item in items:
-                text = item.text.lower()
-                strong = item.find('strong')
-                val = strong.text.strip() if strong else "0"
-                if "post" in text: posts = val
-                elif "follower" in text: followers = val
-                elif "following" in text: following = val
+        stats = soup.find_all('div', class_='user__number')
+        if len(stats) >= 3:
+            posts = stats[0].text.strip()
+            followers = stats[1].text.strip()
+            following = stats[2].text.strip()
 
-        bio_tag = soup.find('div', class_='profile-description')
+        bio_tag = soup.find('div', class_='user__bio')
         bio = bio_tag.text.strip().replace('\n', ' ') if bio_tag else ""
 
-        avatar_tag = soup.find('img', class_='profile-avatar')
-        avatar_url = avatar_tag['src'] if avatar_tag and 'src' in avatar_tag.attrs else ""
+        avatar_tag = soup.find('div', class_='user__img')
+        avatar_url = ""
+        if avatar_tag and avatar_tag.find('img'):
+            avatar_url = avatar_tag.find('img')['src']
 
         return {
             "username": username,
@@ -69,8 +71,8 @@ def fetch_instagram_profile(username):
             "bio": bio,
             "avatarUrl": avatar_url
         }
-    except Exception:
-        return None
+    except Exception as e:
+        return {"error": str(e)}
 
 @app.route('/', methods=['POST'])
 def webhook():
@@ -96,8 +98,10 @@ def webhook():
     send_text(chat_id, f"⏳ @{username} ka data fetch kiya ja raha hai...")
 
     profile = fetch_instagram_profile(username)
-    if not profile:
-        send_text(chat_id, "❌ Data fetch nahi ho paya. Kripya username check karein.")
+    
+    if not profile or "error" in profile:
+        err_msg = profile.get("error", "Unknown error") if profile else "No response"
+        send_text(chat_id, f"❌ Data fetch nahi ho paya.\nReason: {err_msg}")
         return jsonify({"status": "ok"})
 
     card_caption = (
